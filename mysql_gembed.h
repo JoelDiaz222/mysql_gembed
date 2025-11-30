@@ -16,7 +16,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.
  */
-
 #ifndef MYSQL_GEMBED_H
 #define MYSQL_GEMBED_H
 
@@ -27,6 +26,8 @@ extern "C" {
 #endif
 
 #define INPUT_TYPE_TEXT 0
+#define INPUT_TYPE_IMAGE 1
+#define INPUT_TYPE_MULTIMODAL 2
 
 /* Structure for storing generated embeddings */
 typedef struct
@@ -43,18 +44,34 @@ typedef struct
     size_t len;
 } StringSlice;
 
+/* Structure for passing binary data */
+typedef struct
+{
+    const unsigned char *ptr;
+    size_t len;
+} ByteSlice;
+
+/* Generic input data structure */
+typedef struct
+{
+    int input_type;                    /* INPUT_TYPE_* constant */
+    const ByteSlice *binary_data;      /* For images, audio, etc. */
+    size_t n_binary;                   /* Number of binary items */
+    const StringSlice *text_data;      /* For text inputs */
+    size_t n_text;                     /* Number of text items */
+} InputData;
+
 /* Validates the embedding method name and returns method ID */
 extern int validate_embedding_method(const char *method);
 
 /* Validates the model name for a given method and returns model ID */
 extern int validate_embedding_model(int method_id, const char *model, int input_type);
 
-/* Generates embeddings from text inputs using the specified method and model */
-extern int generate_embeddings_from_texts(
+/* Generates embeddings for the given input data */
+extern int generate_embeddings(
     int method_id,
     int model_id,
-    const StringSlice *inputs,
-    size_t n_inputs,
+    const InputData *input_data,
     EmbeddingBatch *out_batch
 );
 

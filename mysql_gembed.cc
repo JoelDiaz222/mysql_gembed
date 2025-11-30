@@ -51,17 +51,17 @@ BEGIN_COMPONENT_METADATA(component_mysql_gembed)
 END_COMPONENT_METADATA();
 
 /* Forward declarations */
-static bool generate_embedding_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
-static void generate_embedding_deinit(UDF_INIT *initid);
-static char *generate_embedding(UDF_INIT *initid, UDF_ARGS *args,
-                                char *result, unsigned long *length,
-                                unsigned char *is_null, unsigned char *error);
+static bool embed_text_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
+static void embed_text_deinit(UDF_INIT *initid);
+static char *embed_text(UDF_INIT *initid, UDF_ARGS *args,
+                        char *result, unsigned long *length,
+                        unsigned char *is_null, unsigned char *error);
 
-static bool generate_embeddings_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
-static void generate_embeddings_deinit(UDF_INIT *initid);
-static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
-                                       char *result, unsigned long *length,
-                                       unsigned char *is_null, unsigned char *error);
+static bool embed_texts_init(UDF_INIT *initid, UDF_ARGS *args, char *message);
+static void embed_texts_deinit(UDF_INIT *initid);
+static char *embed_texts(UDF_INIT *initid, UDF_ARGS *args,
+                         char *result, unsigned long *length,
+                         unsigned char *is_null, unsigned char *error);
 
 static void log_message(int severity, const char *msg) {
     if (mysql_service_log_builtins && mysql_service_log_builtins->message) {
@@ -70,11 +70,11 @@ static void log_message(int severity, const char *msg) {
     }
 }
 
-/* UDF: GENERATE_EMBEDDING(method, model, text) -> VECTOR */
-static bool generate_embedding_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
+/* UDF: EMBED_TEXT(method, model, text) -> VECTOR */
+static bool embed_text_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
     if (args->arg_count != 3) {
         snprintf(message, MYSQL_ERRMSG_SIZE,
-                "GENERATE_EMBEDDING requires 3 arguments: method, model, text");
+                "EMBED_TEXT requires 3 arguments: method, model, text");
         return true;
     }
 
@@ -85,26 +85,23 @@ static bool generate_embedding_init(UDF_INIT *initid, UDF_ARGS *args, char *mess
         return true;
     }
 
-    // Set return type as VECTOR (binary data)
     initid->maybe_null = true;
-    // Max vector size
     initid->max_length = 65535;
-    // Allocate context for storing the vector result
     initid->ptr = nullptr;
 
     return false;
 }
 
-static void generate_embedding_deinit(UDF_INIT *initid) {
+static void embed_text_deinit(UDF_INIT *initid) {
     if (initid->ptr) {
         delete[] initid->ptr;
         initid->ptr = nullptr;
     }
 }
 
-static char *generate_embedding(UDF_INIT *initid, UDF_ARGS *args,
-                                char * /*result*/, unsigned long *length,
-                                unsigned char *is_null, unsigned char *error) {
+static char *embed_text(UDF_INIT *initid, UDF_ARGS *args,
+                        char * /*result*/, unsigned long *length,
+                        unsigned char *is_null, unsigned char *error) {
     const char *method = args->args[0];
     const char *model = args->args[1];
     const char *text = args->args[2];
@@ -114,7 +111,6 @@ static char *generate_embedding(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Validate method
     int method_id = validate_embedding_method(method);
     if (method_id < 0) {
         *error = 1;
@@ -122,7 +118,6 @@ static char *generate_embedding(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Validate model
     int model_id = validate_embedding_model(method_id, model, INPUT_TYPE_TEXT);
     if (model_id < 0) {
         *error = 1;
@@ -130,14 +125,18 @@ static char *generate_embedding(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Prepare input
-    StringSlice input;
-    input.ptr = text;
-    input.len = args->lengths[2];
+    StringSlice text_input{ text, args->lengths[2] };
 
-    // Generate embedding
+    InputData input_data{
+        INPUT_TYPE_TEXT,
+        nullptr,
+        0,
+        &text_input,
+        1
+    };
+
     EmbeddingBatch batch;
-    int err = generate_embeddings_from_texts(method_id, model_id, &input, 1, &batch);
+    int err = generate_embeddings(method_id, model_id, &input_data, &batch);
 
     if (err != 0 || batch.n_vectors != 1) {
         free_embedding_batch(&batch);
@@ -146,20 +145,15 @@ static char *generate_embedding(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // MySQL 9.0 VECTOR format: binary representation of floats
-    // Format: dimension count (4 bytes) + float array
+    // MySQL 9.0 VECTOR format: dimension count (4 bytes) + float array
     size_t vector_size = sizeof(uint32_t) + (batch.dim * sizeof(float));
     char *vector_data = new char[vector_size];
 
-    // Write dimension
     *reinterpret_cast<uint32_t*>(vector_data) = static_cast<uint32_t>(batch.dim);
-
-    // Write float data
     memcpy(vector_data + sizeof(uint32_t), batch.data, batch.dim * sizeof(float));
 
     free_embedding_batch(&batch);
 
-    // Store in UDF context
     if (initid->ptr) {
         delete[] initid->ptr;
     }
@@ -169,11 +163,11 @@ static char *generate_embedding(UDF_INIT *initid, UDF_ARGS *args,
     return vector_data;
 }
 
-/* UDF: GENERATE_EMBEDDINGS(method, model, JSON_ARRAY(texts)) -> JSON_ARRAY(vectors) */
-static bool generate_embeddings_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
+/* UDF: EMBED_TEXTS(method, model, JSON_ARRAY(texts)) -> JSON_ARRAY(vectors) */
+static bool embed_texts_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
     if (args->arg_count != 3) {
         snprintf(message, MYSQL_ERRMSG_SIZE,
-                "GENERATE_EMBEDDINGS requires 3 arguments: method, model, texts_json");
+                "EMBED_TEXTS requires 3 arguments: method, model, texts_json");
         return true;
     }
 
@@ -185,13 +179,13 @@ static bool generate_embeddings_init(UDF_INIT *initid, UDF_ARGS *args, char *mes
     }
 
     initid->maybe_null = true;
-    initid->max_length = 1024 * 1024; // 1MB max
+    initid->max_length = 1024 * 1024;
     initid->ptr = nullptr;
 
     return false;
 }
 
-static void generate_embeddings_deinit(UDF_INIT *initid) {
+static void embed_texts_deinit(UDF_INIT *initid) {
     if (initid->ptr) {
         delete[] initid->ptr;
         initid->ptr = nullptr;
@@ -208,7 +202,6 @@ static int parse_json_string_array(const char *json, size_t json_len,
     const char *p = json;
     const char *end = json + json_len;
 
-    // Skip whitespace and opening bracket
     while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
     if (p >= end || *p != '[') {
         delete[] strings;
@@ -218,7 +211,6 @@ static int parse_json_string_array(const char *json, size_t json_len,
     p++;
 
     while (p < end) {
-        // Skip whitespace
         while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
 
         if (p >= end) break;
@@ -228,7 +220,6 @@ static int parse_json_string_array(const char *json, size_t json_len,
             continue;
         }
 
-        // Expect a quoted string
         if (*p != '"') {
             for (size_t i = 0; i < count; i++) delete[] strings[i];
             delete[] strings;
@@ -240,10 +231,9 @@ static int parse_json_string_array(const char *json, size_t json_len,
         const char *str_start = p;
         size_t str_len = 0;
 
-        // Find end of string
         while (p < end && *p != '"') {
             if (*p == '\\' && p + 1 < end) {
-                p++; // Skip escaped char
+                p++;
             }
             p++;
             str_len++;
@@ -256,7 +246,6 @@ static int parse_json_string_array(const char *json, size_t json_len,
             return -1;
         }
 
-        // Expand array if needed
         if (count >= capacity) {
             capacity *= 2;
             char **new_strings = new char*[capacity];
@@ -269,7 +258,6 @@ static int parse_json_string_array(const char *json, size_t json_len,
             lengths = new_lengths;
         }
 
-        // Copy string
         char *str_copy = new char[str_len + 1];
         memcpy(str_copy, str_start, str_len);
         str_copy[str_len] = '\0';
@@ -278,7 +266,7 @@ static int parse_json_string_array(const char *json, size_t json_len,
         lengths[count] = str_len;
         count++;
 
-        p++; // Skip closing quote
+        p++;
     }
 
     *out_strings = strings;
@@ -287,9 +275,9 @@ static int parse_json_string_array(const char *json, size_t json_len,
     return 0;
 }
 
-static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
-                                       char * /*result*/, unsigned long *length,
-                                       unsigned char *is_null, unsigned char *error) {
+static char *embed_texts(UDF_INIT *initid, UDF_ARGS *args,
+                         char * /*result*/, unsigned long *length,
+                         unsigned char *is_null, unsigned char *error) {
     const char *method = args->args[0];
     const char *model = args->args[1];
     const char *texts_json = args->args[2];
@@ -299,7 +287,6 @@ static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Validate method
     int method_id = validate_embedding_method(method);
     if (method_id < 0) {
         *error = 1;
@@ -307,7 +294,6 @@ static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Validate model
     int model_id = validate_embedding_model(method_id, model, INPUT_TYPE_TEXT);
     if (model_id < 0) {
         *error = 1;
@@ -315,7 +301,6 @@ static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Parse JSON array
     char **strings = nullptr;
     size_t *string_lengths = nullptr;
     size_t n_strings = 0;
@@ -331,18 +316,23 @@ static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Prepare inputs
     StringSlice *inputs = new StringSlice[n_strings];
     for (size_t i = 0; i < n_strings; i++) {
         inputs[i].ptr = strings[i];
         inputs[i].len = string_lengths[i];
     }
 
-    // Generate embeddings
-    EmbeddingBatch batch;
-    int err = generate_embeddings_from_texts(method_id, model_id, inputs, n_strings, &batch);
+    InputData input_data{
+        INPUT_TYPE_TEXT,
+        nullptr,
+        0,
+        inputs,
+        n_strings
+    };
 
-    // Cleanup input strings
+    EmbeddingBatch batch;
+    int err = generate_embeddings(method_id, model_id, &input_data, &batch);
+
     for (size_t i = 0; i < n_strings; i++) {
         delete[] strings[i];
     }
@@ -357,8 +347,7 @@ static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // Format output as JSON array of arrays
-    size_t json_capacity = 1024 * 1024; // 1MB
+    size_t json_capacity = 1024 * 1024;
     char *json_output = new char[json_capacity];
     size_t json_len = 0;
 
@@ -393,7 +382,6 @@ static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
 
     free_embedding_batch(&batch);
 
-    // Store result
     if (initid->ptr) {
         delete[] initid->ptr;
     }
@@ -407,26 +395,24 @@ static char *generate_embeddings(UDF_INIT *initid, UDF_ARGS *args,
 static mysql_service_status_t component_mysql_gembed_init() {
     log_message(INFORMATION_LEVEL, "initializing...");
 
-    // Register GENERATE_EMBEDDING UDF
     if (mysql_service_udf_registration->udf_register(
-            "GENERATE_EMBEDDING",
+            "EMBED_TEXT",
             Item_result::STRING_RESULT,
-            (Udf_func_any)generate_embedding,
-            generate_embedding_init,
-            generate_embedding_deinit)) {
-        log_message(ERROR_LEVEL, "Failed to register GENERATE_EMBEDDING");
+            (Udf_func_any)embed_text,
+            embed_text_init,
+            embed_text_deinit)) {
+        log_message(ERROR_LEVEL, "Failed to register EMBED_TEXT");
         return 1;
     }
 
-    // Register GENERATE_EMBEDDINGS UDF
     if (mysql_service_udf_registration->udf_register(
-            "GENERATE_EMBEDDINGS",
+            "EMBED_TEXTS",
             Item_result::STRING_RESULT,
-            (Udf_func_any)generate_embeddings,
-            generate_embeddings_init,
-            generate_embeddings_deinit)) {
-        log_message(ERROR_LEVEL, "Failed to register GENERATE_EMBEDDINGS");
-        mysql_service_udf_registration->udf_unregister("GENERATE_EMBEDDING", nullptr);
+            (Udf_func_any)embed_texts,
+            embed_texts_init,
+            embed_texts_deinit)) {
+        log_message(ERROR_LEVEL, "Failed to register EMBED_TEXTS");
+        mysql_service_udf_registration->udf_unregister("EMBED_TEXT", nullptr);
         return 1;
     }
 
@@ -439,8 +425,8 @@ static mysql_service_status_t component_mysql_gembed_deinit() {
     log_message(INFORMATION_LEVEL, "shutting down...");
 
     int was_present = 0;
-    mysql_service_udf_registration->udf_unregister("GENERATE_EMBEDDING", &was_present);
-    mysql_service_udf_registration->udf_unregister("GENERATE_EMBEDDINGS", &was_present);
+    mysql_service_udf_registration->udf_unregister("EMBED_TEXT", &was_present);
+    mysql_service_udf_registration->udf_unregister("EMBED_TEXTS", &was_present);
 
     log_message(INFORMATION_LEVEL, "functions unregistered");
     return 0;

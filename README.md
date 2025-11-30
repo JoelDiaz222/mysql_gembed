@@ -2,23 +2,30 @@
 
 ## Generate Embeddings directly in MySQL
 
-## 1. Build
-Assumes you are in the `mysql-server` source code, and the component's files are in a directory inside `mysql-server/components/`. This configuration points to Homebrew's Bison, but you can change it to a different executable.
+## 1. Prepare the Environment
+
+```bash
+git clone git@github.com:mysql/mysql-server.git
+cd mysql-server/components
+git clone git@github.com:JoelDiaz222/mysql_gembed.git
+```
+
+## 2. Build
+
+Assumes you are in the `mysql-server` directory. This configuration points to Homebrew's Bison, but you can change it to a different executable.
 
 ```bash
 mkdir build
 cd build
 
-# Configure
 cmake .. -DBISON_EXECUTABLE=/opt/homebrew/opt/bison/bin/bison \
   -DWITH_UNIT_TESTS=OFF \
   -DWITH_EDITLINE=bundled
 
-# Compile
 make -j$(sysctl -n hw.ncpu)
 ```
 
-## 2. Install & Initialize
+## 3. Install & Initialize
 
 ```bash
 sudo make install
@@ -28,7 +35,8 @@ sudo /usr/local/mysql/bin/mysqld --initialize \
   --datadir=/usr/local/mysql/data
 ```
 
-## 3. Run Server
+## 4. Run Server
+
 Start `mysqld_safe` in the background.
 
 ```bash
@@ -37,7 +45,7 @@ Start `mysqld_safe` in the background.
   --socket=/tmp/mysql.sock &
 ```
 
-## 4. Usage
+## 5. Usage
 
 ### Connect
 ```bash
@@ -47,15 +55,17 @@ Start `mysqld_safe` in the background.
 ### Vector Embeddings (SQL)
 
 **Generate Single Embedding:**
+
 ```sql
 SELECT VECTOR_TO_STRING(
-    GENERATE_EMBEDDING("fastembed", "Qdrant/all-MiniLM-L6-v2-onnx", "a")
+    EMBED_TEXT("fastembed", "Qdrant/all-MiniLM-L6-v2-onnx", "a")
 ) AS readable_embedding;
 ```
 
 **Generate Batch Embeddings:**
+
 ```sql
-SELECT GENERATE_EMBEDDINGS(
+SELECT EMBED_TEXTS(
     'fastembed',
     'Qdrant/all-MiniLM-L6-v2-onnx',
     '["hello", "world", "test"]'
@@ -63,10 +73,11 @@ SELECT GENERATE_EMBEDDINGS(
 ```
 
 **Pretty Print Embeddings:**
+
 ```sql
 SELECT JSON_PRETTY(
     CONVERT(
-        GENERATE_EMBEDDINGS(
+        EMBED_TEXTS(
             'fastembed',
             'Qdrant/all-MiniLM-L6-v2-onnx',
             '["hello", "world", "test"]'
@@ -74,7 +85,8 @@ SELECT JSON_PRETTY(
 ) AS readable_embeddings;
 ```
 
-## 5. Stop Server
+## 6. Stop Server
+
 ```bash
 sudo pkill mysqld
 ```
