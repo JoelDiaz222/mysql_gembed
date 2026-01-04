@@ -70,11 +70,11 @@ static void log_message(int severity, const char *msg) {
     }
 }
 
-/* UDF: EMBED_TEXT(method, model, text) -> VECTOR */
+/* UDF: EMBED_TEXT(embedder, model, text) -> VECTOR */
 static bool embed_text_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
     if (args->arg_count != 3) {
         snprintf(message, MYSQL_ERRMSG_SIZE,
-                "EMBED_TEXT requires 3 arguments: method, model, text");
+                "EMBED_TEXT requires 3 arguments: embedder, model, text");
         return true;
     }
 
@@ -102,23 +102,23 @@ static void embed_text_deinit(UDF_INIT *initid) {
 static char *embed_text(UDF_INIT *initid, UDF_ARGS *args,
                         char * /*result*/, unsigned long *length,
                         unsigned char *is_null, unsigned char *error) {
-    const char *method = args->args[0];
+    const char *embedder = args->args[0];
     const char *model = args->args[1];
     const char *text = args->args[2];
 
-    if (!method || !model || !text) {
+    if (!embedder || !model || !text) {
         *is_null = 1;
         return nullptr;
     }
 
-    int method_id = validate_embedding_method(method);
-    if (method_id < 0) {
+    int embedder_id = validate_embedder(embedder);
+    if (embedder_id < 0) {
         *error = 1;
-        log_message(ERROR_LEVEL, "Invalid embedding method");
+        log_message(ERROR_LEVEL, "Invalid embedding embedder");
         return nullptr;
     }
 
-    int model_id = validate_embedding_model(method_id, model, INPUT_TYPE_TEXT);
+    int model_id = validate_embedding_model(embedder_id, model, INPUT_TYPE_TEXT);
     if (model_id < 0) {
         *error = 1;
         log_message(ERROR_LEVEL, "Invalid or unsupported model");
@@ -136,7 +136,7 @@ static char *embed_text(UDF_INIT *initid, UDF_ARGS *args,
     };
 
     EmbeddingBatch batch;
-    int err = generate_embeddings(method_id, model_id, &input_data, &batch);
+    int err = generate_embeddings(embedder_id, model_id, &input_data, &batch);
 
     if (err != 0 || batch.n_vectors != 1) {
         free_embedding_batch(&batch);
@@ -163,11 +163,11 @@ static char *embed_text(UDF_INIT *initid, UDF_ARGS *args,
     return vector_data;
 }
 
-/* UDF: EMBED_TEXTS(method, model, JSON_ARRAY(texts)) -> JSON_ARRAY(vectors) */
+/* UDF: EMBED_TEXTS(embedder, model, JSON_ARRAY(texts)) -> JSON_ARRAY(vectors) */
 static bool embed_texts_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
     if (args->arg_count != 3) {
         snprintf(message, MYSQL_ERRMSG_SIZE,
-                "EMBED_TEXTS requires 3 arguments: method, model, texts_json");
+                "EMBED_TEXTS requires 3 arguments: embedder, model, texts_json");
         return true;
     }
 
@@ -278,23 +278,23 @@ static int parse_json_string_array(const char *json, size_t json_len,
 static char *embed_texts(UDF_INIT *initid, UDF_ARGS *args,
                          char * /*result*/, unsigned long *length,
                          unsigned char *is_null, unsigned char *error) {
-    const char *method = args->args[0];
+    const char *embedder = args->args[0];
     const char *model = args->args[1];
     const char *texts_json = args->args[2];
 
-    if (!method || !model || !texts_json) {
+    if (!embedder || !model || !texts_json) {
         *is_null = 1;
         return nullptr;
     }
 
-    int method_id = validate_embedding_method(method);
-    if (method_id < 0) {
+    int embedder_id = validate_embedder(embedder);
+    if (embedder_id < 0) {
         *error = 1;
-        log_message(ERROR_LEVEL, "Invalid embedding method in batch");
+        log_message(ERROR_LEVEL, "Invalid embedding embedder in batch");
         return nullptr;
     }
 
-    int model_id = validate_embedding_model(method_id, model, INPUT_TYPE_TEXT);
+    int model_id = validate_embedding_model(embedder_id, model, INPUT_TYPE_TEXT);
     if (model_id < 0) {
         *error = 1;
         log_message(ERROR_LEVEL, "Invalid or unsupported model in batch");
@@ -331,7 +331,7 @@ static char *embed_texts(UDF_INIT *initid, UDF_ARGS *args,
     };
 
     EmbeddingBatch batch;
-    int err = generate_embeddings(method_id, model_id, &input_data, &batch);
+    int err = generate_embeddings(embedder_id, model_id, &input_data, &batch);
 
     for (size_t i = 0; i < n_strings; i++) {
         delete[] strings[i];

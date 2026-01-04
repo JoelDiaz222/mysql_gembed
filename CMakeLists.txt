@@ -20,6 +20,9 @@ IF(APPLE)
     "-framework CoreFoundation"
     "-framework CoreML"
     "-framework Accelerate"
+    "-framework Metal"
+    "-framework MetalPerformanceShaders"
+    "-framework QuartzCore"
     "-lobjc"
   )
 ENDIF()
