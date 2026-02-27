@@ -7,7 +7,7 @@
 ```bash
 git clone git@github.com:mysql/mysql-server.git
 cd mysql-server/components
-git clone git@github.com:JoelDiaz222/mysql_gembed.git
+git clone git@github.com:JoelDiaz222/mysql_gembed.git --recurse-submodules
 ```
 
 ## 2. Build
@@ -48,8 +48,15 @@ Start `mysqld_safe` in the background.
 ## 5. Usage
 
 ### Connect
+
 ```bash
 /usr/local/mysql/bin/mysql -u root
+```
+
+### Install Component
+
+```sql
+INSTALL COMPONENT 'file://component_mysql_gembed';
 ```
 
 ### Vector Embeddings (SQL)
@@ -58,7 +65,7 @@ Start `mysqld_safe` in the background.
 
 ```sql
 SELECT VECTOR_TO_STRING(
-    EMBED_TEXT("fastembed", "Qdrant/all-MiniLM-L6-v2-onnx", "a")
+    EMBED_TEXT("embed_anything", "Qdrant/all-MiniLM-L6-v2-onnx", "a")
 ) AS readable_embedding;
 ```
 
@@ -66,7 +73,7 @@ SELECT VECTOR_TO_STRING(
 
 ```sql
 SELECT EMBED_TEXTS(
-    'fastembed',
+    'embed_anything',
     'Qdrant/all-MiniLM-L6-v2-onnx',
     '["hello", "world", "test"]'
 ) AS embeddings;
@@ -78,7 +85,7 @@ SELECT EMBED_TEXTS(
 SELECT JSON_PRETTY(
     CONVERT(
         EMBED_TEXTS(
-            'fastembed',
+            'embed_anything',
             'Qdrant/all-MiniLM-L6-v2-onnx',
             '["hello", "world", "test"]'
         ) USING utf8mb4)
