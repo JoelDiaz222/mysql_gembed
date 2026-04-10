@@ -1,8 +1,36 @@
 # mysql_gembed
 
-## Generate Embeddings directly in MySQL
+A MySQL server component that brings **in-database embedding generation** directly into MySQL, by using the
+[Gembed Rust core](https://github.com/JoelDiaz222/gembed).
 
-## 1. Prepare the Environment
+The component is a thin adapter that marshals MySQL types into the C ABI of the Gembed Rust core (`libgembed`), which
+handles model loading and inference.
+
+## Architecture
+
+```
+┌───────────────────────────────────────────────┐
+│                MySQL SQL Query                │
+│         (e.g. SELECT EMBED_TEXT(...))         │
+└───────────────────────┬───────────────────────┘
+                        │ MySQL Component API
+                        ▼
+┌───────────────────────────────────────────────┐
+│        MySQL Component (mysql_gembed)         │
+│  - Registers EMBED_TEXT / EMBED_TEXTS UDFs    │
+│  - Marshals MySQL types → C ABI types         │
+└───────────────────────┬───────────────────────┘
+                        │ C FFI
+                        ▼
+┌───────────────────────────────────────────────┐
+│         Rust Core Library (libgembed)         │
+│          Contains embedding backends          │
+└───────────────────────────────────────────────┘
+```
+
+## Build
+
+Clone this repository **inside** the MySQL source tree, then build MySQL normally.
 
 ```bash
 git clone git@github.com:mysql/mysql-server.git
@@ -10,89 +38,60 @@ cd mysql-server/components
 git clone git@github.com:JoelDiaz222/mysql_gembed.git --recurse-submodules
 ```
 
-## 2. Build
-
-Assumes you are in the `mysql-server` directory. This configuration points to Homebrew's Bison, but you can change it to a different executable.
+From the `mysql-server` directory:
 
 ```bash
-mkdir build
-cd build
+mkdir build && cd build
 
-cmake .. -DBISON_EXECUTABLE=/opt/homebrew/opt/bison/bin/bison \
+cmake .. \
+  -DBISON_EXECUTABLE=/opt/homebrew/opt/bison/bin/bison \
   -DWITH_UNIT_TESTS=OFF \
   -DWITH_EDITLINE=bundled
 
-make -j$(sysctl -n hw.ncpu)
+make -j$(nproc)
 ```
 
-## 3. Install & Initialize
+## Install & Run
 
 ```bash
 sudo make install
 
+# Initialize and start the server
 sudo /usr/local/mysql/bin/mysqld --initialize \
   --basedir=/usr/local/mysql \
   --datadir=/usr/local/mysql/data
-```
 
-## 4. Run Server
-
-Start `mysqld_safe` in the background.
-
-```bash
 /usr/local/mysql/bin/mysqld_safe \
   --datadir=/usr/local/mysql/data \
   --socket=/tmp/mysql.sock &
 ```
 
-## 5. Usage
-
-### Connect
+## Usage
 
 ```bash
 /usr/local/mysql/bin/mysql -u root
 ```
 
-### Install Component
-
 ```sql
+-- Load the component
 INSTALL COMPONENT 'file://component_mysql_gembed';
-```
 
-### Vector Embeddings (SQL)
-
-**Generate Single Embedding:**
-
-```sql
+-- Embed a single string
 SELECT VECTOR_TO_STRING(
-    EMBED_TEXT("embed_anything", "Qdrant/all-MiniLM-L6-v2-onnx", "a")
-) AS readable_embedding;
+    EMBED_TEXT('embed_anything', 'Qdrant/all-MiniLM-L6-v2-onnx', 'Hello world')
+) AS embedding;
+
+-- Embed a batch of strings (JSON array)
+SELECT JSON_PRETTY(CONVERT(
+    EMBED_TEXTS(
+        'embed_anything',
+        'Qdrant/all-MiniLM-L6-v2-onnx',
+        '["hello", "world", "test"]'
+    ) USING utf8mb4
+)) AS embeddings;
 ```
 
-**Generate Batch Embeddings:**
-
-```sql
-SELECT EMBED_TEXTS(
-    'embed_anything',
-    'Qdrant/all-MiniLM-L6-v2-onnx',
-    '["hello", "world", "test"]'
-) AS embeddings;
-```
-
-**Pretty Print Embeddings:**
-
-```sql
-SELECT JSON_PRETTY(
-    CONVERT(
-        EMBED_TEXTS(
-            'embed_anything',
-            'Qdrant/all-MiniLM-L6-v2-onnx',
-            '["hello", "world", "test"]'
-        ) USING utf8mb4)
-) AS readable_embeddings;
-```
-
-## 6. Stop Server
+## Stop Server
 
 ```bash
 sudo pkill mysqld
