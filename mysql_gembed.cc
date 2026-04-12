@@ -1,4 +1,4 @@
-/* Copyright (c) 2025, Joel Díaz
+/* Copyright (c) 2025-2026, Joel Díaz Álvarez
  *
  * MySQL Component for generating embeddings using the Gembed Rust static library
  * Inspired by lefred's vector_operations component
@@ -45,9 +45,9 @@ END_COMPONENT_REQUIRES();
 
 /* Component metadata */
 BEGIN_COMPONENT_METADATA(component_mysql_gembed)
-  METADATA("mysql.author", "Joel Díaz"),
+  METADATA("mysql.author", "Joel Díaz Álvarez"),
   METADATA("mysql.license", "GPL"),
-  METADATA("mysql.dev", "Joel Díaz"),
+  METADATA("mysql.dev", "Joel Díaz Álvarez"),
 END_COMPONENT_METADATA();
 
 /* Forward declarations */
