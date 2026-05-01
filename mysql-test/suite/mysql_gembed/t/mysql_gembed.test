@@ -1,0 +1,44 @@
+--source include/have_mysql_gembed.inc
+
+--echo # Load mysql_gembed
+INSTALL COMPONENT "file://component_mysql_gembed";
+SELECT COUNT(*) = 1 AS component_loaded
+FROM mysql.component
+WHERE component_urn = 'file://component_mysql_gembed';
+
+SET @backend = 'embed_anything';
+SET @text_model = 'sentence-transformers/all-MiniLM-L6-v2';
+
+--echo # Text embedding functions
+SET @embedding = EMBED_TEXT(@backend, @text_model, 'Hello world');
+SELECT VECTOR_DIM(@embedding) > 0 AS embed_text_returns_nonempty_vector;
+
+SET @batch = CONVERT(EMBED_TEXTS(@backend, @text_model,
+                                 '["Hello", "World"]') USING utf8mb4);
+SELECT JSON_VALID(@batch) AS embed_texts_returns_valid_json;
+SELECT JSON_LENGTH(CAST(@batch AS JSON)) = 2 AS embed_texts_returns_two_vectors;
+SELECT JSON_LENGTH(CAST(@batch AS JSON), '$[0]') > 0
+       AS embed_texts_returns_nonempty_vectors;
+SELECT JSON_LENGTH(CAST(@batch AS JSON), '$[0]') =
+       JSON_LENGTH(CAST(@batch AS JSON), '$[1]')
+       AS embed_texts_consistent_dims;
+SELECT VECTOR_DIM(@embedding) = JSON_LENGTH(CAST(@batch AS JSON), '$[0]')
+       AS embed_text_and_embed_texts_dims_match;
+
+--echo # Null and empty inputs
+SELECT EMBED_TEXT(@backend, @text_model, NULL) IS NULL
+       AS embed_text_null_input_returns_null;
+SELECT EMBED_TEXTS(@backend, @text_model, '[]') IS NULL
+       AS embed_texts_empty_array_returns_null;
+
+--echo # Invalid input handling
+--error ER_CANT_INITIALIZE_UDF
+SELECT EMBED_TEXT(@backend, @text_model);
+SELECT EMBED_TEXTS(@backend, @text_model, 'not json') IS NULL
+       AS embed_texts_invalid_json_returns_null;
+
+--echo # Unload mysql_gembed
+UNINSTALL COMPONENT "file://component_mysql_gembed";
+SELECT COUNT(*) = 0 AS component_unloaded
+FROM mysql.component
+WHERE component_urn = 'file://component_mysql_gembed';

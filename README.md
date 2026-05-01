@@ -51,6 +51,68 @@ cmake .. \
 make -j$(nproc)
 ```
 
+## Test
+
+The component includes one MTR integration test case,
+`mysql_gembed.mysql_gembed`. It starts a real MySQL server, loads the component,
+calls `EMBED_TEXT` and `EMBED_TEXTS`, validates vector dimensions and JSON batch
+shape, checks null/error paths, and unloads the component.
+
+From the `mysql-server` directory, first build the component:
+
+```bash
+cmake --build build --target component_mysql_gembed -j$(nproc)
+```
+
+Copy the bundled MTR files into the MySQL test tree:
+
+```bash
+cp components/mysql_gembed/mysql-test/include/have_mysql_gembed.inc \
+  mysql-test/include/
+
+cp -R components/mysql_gembed/mysql-test/suite/mysql_gembed \
+  mysql-test/suite/
+```
+
+Register the component with MTR by adding this line to
+`mysql-test/include/plugin.defs`:
+
+```text
+component_mysql_gembed          plugin_output_directory  no  MYSQL_GEMBED
+```
+
+The same line is available in
+[mysql_gembed.defs](mysql-test/include/plugin.defs.d/mysql_gembed.defs).
+
+Finally, run the component suite from the build tree:
+
+```bash
+cd build/mysql-test
+./mtr --suite=mysql_gembed mysql_gembed
+```
+
+Expected result:
+
+```text
+mysql_gembed.mysql_gembed                 [ pass ]
+shutdown_report                           [ pass ]
+Completed: All 2 tests were successful.
+```
+
+`shutdown_report` is MTR's own cleanup check. The component coverage is the
+single `mysql_gembed.mysql_gembed` integration test case.
+
+Inside this repository, the suite files are:
+
+- [mysql_gembed.test](mysql-test/suite/mysql_gembed/t/mysql_gembed.test)
+- [mysql_gembed.result](mysql-test/suite/mysql_gembed/r/mysql_gembed.result)
+- [mysql_gembed-master.opt](mysql-test/suite/mysql_gembed/t/mysql_gembed-master.opt)
+
+MTR finds the component through `mysql-test/include/plugin.defs`; the suite uses
+[mysql_gembed-master.opt](mysql-test/suite/mysql_gembed/t/mysql_gembed-master.opt)
+to point `@@plugin_dir` at the build output directory containing
+`component_mysql_gembed.so`.
+
 ## Install & Run
 
 ```bash

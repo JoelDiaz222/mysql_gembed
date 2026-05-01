@@ -64,10 +64,8 @@ static char *embed_texts(UDF_INIT *initid, UDF_ARGS *args,
                          unsigned char *is_null, unsigned char *error);
 
 static void log_message(int severity, const char *msg) {
-    if (mysql_service_log_builtins && mysql_service_log_builtins->message) {
-        mysql_service_log_builtins->message(severity, ER_LOG_PRINTF_MSG,
-                                            "component_mysql_gembed: %s", msg);
-    }
+    (void)severity;
+    (void)msg;
 }
 
 /* UDF: EMBED_TEXT(backend, model, text) -> VECTOR */
@@ -145,12 +143,11 @@ static char *embed_text(UDF_INIT *initid, UDF_ARGS *args,
         return nullptr;
     }
 
-    // MySQL 9.0 VECTOR format: dimension count (4 bytes) + float array
-    size_t vector_size = sizeof(uint32_t) + (batch.dim * sizeof(float));
+    // MySQL VECTOR values are stored as a raw float array.
+    size_t vector_size = batch.dim * sizeof(float);
     char *vector_data = new char[vector_size];
 
-    *reinterpret_cast<uint32_t*>(vector_data) = static_cast<uint32_t>(batch.dim);
-    memcpy(vector_data + sizeof(uint32_t), batch.data, batch.dim * sizeof(float));
+    memcpy(vector_data, batch.data, vector_size);
 
     free_embedding_batch(&batch);
 
@@ -312,6 +309,8 @@ static char *embed_texts(UDF_INIT *initid, UDF_ARGS *args,
     }
 
     if (n_strings == 0) {
+        delete[] strings;
+        delete[] string_lengths;
         *is_null = 1;
         return nullptr;
     }

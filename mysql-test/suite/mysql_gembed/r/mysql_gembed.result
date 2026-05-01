@@ -1,0 +1,58 @@
+# Load mysql_gembed
+INSTALL COMPONENT "file://component_mysql_gembed";
+SELECT COUNT(*) = 1 AS component_loaded
+FROM mysql.component
+WHERE component_urn = 'file://component_mysql_gembed';
+component_loaded
+1
+SET @backend = 'embed_anything';
+SET @text_model = 'sentence-transformers/all-MiniLM-L6-v2';
+# Text embedding functions
+SET @embedding = EMBED_TEXT(@backend, @text_model, 'Hello world');
+SELECT VECTOR_DIM(@embedding) > 0 AS embed_text_returns_nonempty_vector;
+embed_text_returns_nonempty_vector
+1
+SET @batch = CONVERT(EMBED_TEXTS(@backend, @text_model,
+'["Hello", "World"]') USING utf8mb4);
+SELECT JSON_VALID(@batch) AS embed_texts_returns_valid_json;
+embed_texts_returns_valid_json
+1
+SELECT JSON_LENGTH(CAST(@batch AS JSON)) = 2 AS embed_texts_returns_two_vectors;
+embed_texts_returns_two_vectors
+1
+SELECT JSON_LENGTH(CAST(@batch AS JSON), '$[0]') > 0
+AS embed_texts_returns_nonempty_vectors;
+embed_texts_returns_nonempty_vectors
+1
+SELECT JSON_LENGTH(CAST(@batch AS JSON), '$[0]') =
+JSON_LENGTH(CAST(@batch AS JSON), '$[1]')
+AS embed_texts_consistent_dims;
+embed_texts_consistent_dims
+1
+SELECT VECTOR_DIM(@embedding) = JSON_LENGTH(CAST(@batch AS JSON), '$[0]')
+AS embed_text_and_embed_texts_dims_match;
+embed_text_and_embed_texts_dims_match
+1
+# Null and empty inputs
+SELECT EMBED_TEXT(@backend, @text_model, NULL) IS NULL
+AS embed_text_null_input_returns_null;
+embed_text_null_input_returns_null
+1
+SELECT EMBED_TEXTS(@backend, @text_model, '[]') IS NULL
+AS embed_texts_empty_array_returns_null;
+embed_texts_empty_array_returns_null
+1
+# Invalid input handling
+SELECT EMBED_TEXT(@backend, @text_model);
+ERROR HY000: Can't initialize function 'EMBED_TEXT'; EMBED_TEXT requires 3 arguments: backend, model, text
+SELECT EMBED_TEXTS(@backend, @text_model, 'not json') IS NULL
+AS embed_texts_invalid_json_returns_null;
+embed_texts_invalid_json_returns_null
+1
+# Unload mysql_gembed
+UNINSTALL COMPONENT "file://component_mysql_gembed";
+SELECT COUNT(*) = 0 AS component_unloaded
+FROM mysql.component
+WHERE component_urn = 'file://component_mysql_gembed';
+component_unloaded
+1
